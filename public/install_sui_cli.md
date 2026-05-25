@@ -139,8 +139,8 @@ Build time is 5–15 min and peaks around 4 GB RAM. On constrained boxes (CI con
 The first `sui client …` call prompts to create config + wallet. Walk through it once non-interactively:
 
 ```bash
-# Initialize config, choose mainnet RPC
-sui client                          # interactive: press Enter to accept default RPC, pick env name `mainnet`, ed25519 scheme
+# Initialize config, choose testnet RPC (Polius is deployed on Sui testnet)
+sui client                          # interactive: press Enter to accept default RPC, pick env name `testnet`, ed25519 scheme
 
 # Or skip prompts entirely:
 mkdir -p "$HOME/.sui/sui_config"
@@ -148,24 +148,23 @@ cat > "$HOME/.sui/sui_config/client.yaml" <<'EOF'
 keystore:
   File: ~/.sui/sui_config/sui.keystore
 envs:
-  - alias: mainnet
-    rpc: "https://fullnode.mainnet.sui.io:443"
-    ws: ~
   - alias: testnet
     rpc: "https://fullnode.testnet.sui.io:443"
     ws: ~
-active_env: mainnet
+  - alias: mainnet
+    rpc: "https://fullnode.mainnet.sui.io:443"
+    ws: ~
+active_env: testnet
 EOF
 sui client new-address ed25519        # creates a wallet, prints the address + mnemonic — SAVE IT
 sui client active-address             # confirm
 ```
 
-For testnet faucet funds (only on testnet):
+Fund the address from the testnet faucet (free, instant):
 
 ```bash
-sui client switch --env testnet
-sui client faucet
-sui client switch --env mainnet      # switch back when done
+sui client faucet                     # drops 1 SUI to the active address on testnet
+sui client gas                        # confirm the coin showed up
 ```
 
 ---
@@ -179,7 +178,7 @@ sui client switch --env mainnet      # switch back when done
 | `curl: (22) The requested URL returned error: 404` on `sui.io/install.sh` | That script doesn't exist | Use path A or B above |
 | `cargo: command not found` | No Rust toolchain | Install via `rustup`, or switch to path A/B |
 | `Killed` during `cargo install` | OOM | Need ~4 GB RAM; use prebuilt binary |
-| `Failed to retrieve gas object …` on first `sui client` call | No funded address on current env | `sui client new-address ed25519` then fund it (mainnet: bridge in SUI; testnet: `sui client faucet`) |
+| `Failed to retrieve gas object …` on first `sui client` call | No funded address on current env | `sui client new-address ed25519`, then `sui client faucet` (Polius runs on testnet, so the faucet is the right way) |
 | `No active address` | Address created on a different env | `sui client addresses` to list; `sui client switch --address <0x…>` |
 
 ---
