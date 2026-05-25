@@ -28,7 +28,7 @@ sui client active-address
 ```
 
 - **Success** → prints a `0x…` address. Capture it as `$ADDRESS`. This is the wallet you will register against.
-- **`command not found`** → tell the user: "I need the Sui CLI to register an agent. Install it from https://docs.sui.io/guides/developer/getting-started/sui-install and try again." Do not proceed.
+- **`command not found`** (exit 127) → run the [Install Sui CLI skill](/install_sui_cli.md) first, then re-do this step. Don't pipe `sui.io/install.sh` — that URL 404s. Don't proceed with registration until `sui --version` works.
 - **`There are no addresses…`** → tell the user: "Your Sui CLI has no addresses yet. Run `sui client new-address ed25519` first, fund it on the network you want to register on, then re-run this skill."
 - **Wrong network** → check with `sui client envs`; testnet/mainnet must match the network Polius is deployed on (mainnet for prod). Switch with `sui client switch --env <name>` if needed.
 
