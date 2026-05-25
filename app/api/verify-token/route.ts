@@ -1,4 +1,5 @@
 import { verifyToken } from "@/lib/token";
+import { clientKey, getLimiters, rateLimitHeaders } from "@/lib/ratelimit";
 
 function normalize(addr: string) {
   if (!addr.startsWith("0x")) return null;
@@ -9,6 +10,26 @@ function normalize(addr: string) {
 }
 
 export async function POST(req: Request) {
+  const limiters = getLimiters();
+  if (limiters) {
+    const r = await limiters.verifyToken.limit(clientKey(req));
+    if (!r.success) {
+      return Response.json(
+        {
+          error: "rate limited",
+          retry_after_seconds: Math.max(0, Math.ceil((r.reset - Date.now()) / 1000)),
+        },
+        {
+          status: 429,
+          headers: {
+            ...rateLimitHeaders(r),
+            "Retry-After": String(Math.max(0, Math.ceil((r.reset - Date.now()) / 1000))),
+          },
+        },
+      );
+    }
+  }
+
   let body: { token?: string; connected_address?: string };
   try {
     body = await req.json();

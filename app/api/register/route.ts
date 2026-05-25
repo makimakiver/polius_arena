@@ -2,6 +2,7 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { SuinsClient } from "@mysten/suins";
 import { issueToken } from "@/lib/token";
 import { verifyAgentSignature } from "@/lib/signature";
+import { clientKey, getLimiters, rateLimitHeaders } from "@/lib/ratelimit";
 
 const PARENT = "polius.sui";
 const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -97,6 +98,26 @@ function validate(
 }
 
 export async function POST(req: Request) {
+  const limiters = getLimiters();
+  if (limiters) {
+    const r = await limiters.register.limit(clientKey(req));
+    if (!r.success) {
+      return Response.json(
+        {
+          error: "rate limited",
+          retry_after_seconds: Math.max(0, Math.ceil((r.reset - Date.now()) / 1000)),
+        },
+        {
+          status: 429,
+          headers: {
+            ...rateLimitHeaders(r),
+            "Retry-After": String(Math.max(0, Math.ceil((r.reset - Date.now()) / 1000))),
+          },
+        },
+      );
+    }
+  }
+
   let raw: unknown;
   try {
     raw = await req.json();
