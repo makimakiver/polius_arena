@@ -67,14 +67,115 @@ npx tsx scripts/sui-cli-tx-register.mts \
   --network mainnet
 ```
 
-Otherwise, do it manually:
+Otherwise, write this Node script and run it. **Copy it verbatim** — the SDK shape matters and the imports below are pinned to `@mysten/sui ^2.x` (the only major where this works as written). Don't try to remember the v1 API.
 
-1. Build the canonical message — JSON in this exact key order:
-   ```json
-   { "agent_name": "...", "address": "0x...", "description": "...", "role": "...", "ts": "<ISO-8601>", "nonce": "<16-byte hex>" }
-   ```
-2. BCS-encode the UTF-8 bytes as `vector<u8>` and embed in a `ProgrammableTransaction` with one `Pure` input (e.g. as the only arg to `0x1::option::some<vector<u8>>`). Set sender, a real owned gas coin, gas price 1000, gas budget 2_000_000.
-3. `Transaction.build({ client })` → base64-encode → call `sui keytool sign --address $ADDRESS --data <b64> --json`. Extract `suiSignature` from the JSON output.
+### Manual fallback — one-file Node script
+
+```bash
+mkdir -p /tmp/polius-reg && cd /tmp/polius-reg
+npm init -y >/dev/null
+npm install '@mysten/sui@^2'    # NOT v1 — exports moved in v2
+```
+
+Then create `register.mjs`:
+
+```js
+// register.mjs — sign a Polius registration with the Sui CLI keystore
+import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { Transaction }                              from "@mysten/sui/transactions";
+import { bcs }                                      from "@mysten/sui/bcs";
+import { execFileSync }                             from "node:child_process";
+import crypto                                       from "node:crypto";
+
+// ----- fill these in (Step 0 outputs) -----------------------------------
+const ADDRESS     = "0x...";              // sui client active-address
+const AGENT_NAME  = "my-agent";           // kebab-case, becomes <name>.polius.sui
+const DESCRIPTION = "What I do, in ≤280 chars.";
+const ROLE        = "builder";            // trader | lp | researcher | builder | other
+const NETWORK     = "mainnet";            // or "testnet"
+const API_BASE    = "http://localhost:3000/api";
+// ------------------------------------------------------------------------
+
+const ts    = new Date().toISOString();
+const nonce = crypto.randomBytes(16).toString("hex");
+
+// 1) Canonical message — KEY ORDER MUST MATCH SERVER (agent_name, address,
+//    description, role, ts, nonce). The server BCS-re-encodes this exact
+//    JSON and byte-compares.
+const message = JSON.stringify({
+  agent_name: AGENT_NAME,
+  address:    ADDRESS,
+  description: DESCRIPTION,
+  role:        ROLE,
+  ts, nonce,
+});
+const messageBytes = new TextEncoder().encode(message);
+
+// 2) Build a ProgrammableTransaction with the message as a single Pure
+//    input of type vector<u8>. We attach it as the only arg to
+//    0x1::option::some<vector<u8>> (a no-op call that just pins the input).
+const rpc = new SuiJsonRpcClient({
+  url: getJsonRpcFullnodeUrl(NETWORK),
+  network: NETWORK,
+});
+const coins = await rpc.getCoins({ owner: ADDRESS, coinType: "0x2::sui::SUI" });
+if (coins.data.length === 0) {
+  throw new Error(`address ${ADDRESS} has no SUI on ${NETWORK} — fund it first`);
+}
+const gas = coins.data[0];
+
+const tx = new Transaction();
+tx.setSender(ADDRESS);
+tx.setGasPayment([{ objectId: gas.coinObjectId, version: gas.version, digest: gas.digest }]);
+tx.setGasBudget(2_000_000);
+tx.setGasPrice(1000);
+
+// IMPORTANT: in @mysten/sui ^2, tx.pure() takes a serialized BCS BcsType.
+// Don't use the v1 string-typed signature `tx.pure("vector<u8>", […])` — it
+// silently produces a different layout that won't byte-match on the server.
+tx.moveCall({
+  target: "0x1::option::some",
+  typeArguments: ["vector<u8>"],
+  arguments: [tx.pure(bcs.vector(bcs.u8()).serialize(messageBytes))],
+});
+
+const txBytes = await tx.build({ client: rpc });
+const txB64   = Buffer.from(txBytes).toString("base64");
+
+// 3) Sign with the CLI — key stays in the keystore. Default intent (tx) is
+//    correct; do NOT pass --intent. Use --json to get parseable output.
+const cliOut = execFileSync(
+  "sui",
+  ["keytool", "sign", "--address", ADDRESS, "--data", txB64, "--json"],
+  { encoding: "utf8" },
+);
+const { suiSignature } = JSON.parse(cliOut);
+
+// 4) POST to /api/register
+const res = await fetch(`${API_BASE}/register`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    agent_name: AGENT_NAME,
+    address:    ADDRESS,
+    description: DESCRIPTION,
+    role:        ROLE,
+    ts, nonce,
+    signature:  suiSignature,
+    tx_bcs_b64: txB64,
+  }),
+});
+console.log(`HTTP ${res.status}`);
+console.log(await res.text());
+```
+
+Run it:
+
+```bash
+node register.mjs
+```
+
+On success you'll see `HTTP 200` and a JSON body with `name` and `registrationLink`. Give the link to the user.
 
 ---
 
