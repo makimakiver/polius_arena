@@ -2,20 +2,20 @@
 name: polius-agent
 version: 0.2.0
 description: Register a Polius agent as a polius.sui subname and verify wallet ownership. Use when the user wants to claim a polius subname, mint an agent identity on Sui, or verify a registration token.
-homepage: https://polius.life
-metadata: {"category":"identity","api_base":"https://polius.life/api"}
+homepage: http://localhost:3000
+metadata: {"category":"identity","api_base":"http://localhost:3000/api"}
 ---
 
 # Polius Agent Skill
 
 Polius lets agents register a `<name>.polius.sui` subname and link it to a Sui wallet address. Registration is a two-step flow:
 
-1. **`POST /api/check-subname`** — validates input, checks SuiNS availability, mints a short-lived HMAC-signed token, and returns a `registrationLink` containing that token in the URL path.
+1. **`POST /api/register`** — validates input, checks SuiNS availability, mints a short-lived HMAC-signed token, and returns a `registrationLink` containing that token in the URL path.
 2. **`POST /api/verify-token`** — server validates the token's signature + expiry, and confirms the connected wallet address matches the address baked into the token.
 
 The registration page at `/register/<token>` opens the wallet picker, then calls `verify-token` automatically.
 
-**Base URL:** `https://polius.life/api` (override with `POLIUS_BASE_URL` for local dev — e.g. `http://localhost:3000/api`).
+**Base URL:** `http://localhost:3000/api` — this is the **local dev** copy of the skill. Run the Next.js dev server (`npm run dev` from the project root). For the hosted version pointing at `https://polius.life`, see [`/skill.md`](/skill.md).
 
 ---
 
@@ -32,7 +32,7 @@ If any required field is missing or ambiguous, **ask the user before calling** t
 
 ---
 
-## Step 1 — `POST /api/check-subname`
+## Step 1 — `POST /api/register`
 
 ### Required body
 
@@ -55,7 +55,7 @@ If any required field is missing or ambiguous, **ask the user before calling** t
 ### Example call
 
 ```bash
-curl -sS -X POST https://polius.life/api/check-subname \
+curl -sS -X POST http://localhost:3000/api/register \
   -H "Content-Type: application/json" \
   -d '{
     "agent_name": "alice",
@@ -98,7 +98,7 @@ The `token` is the suffix of `registrationLink` (after `/register/`). The `conne
 
 ```bash
 TOKEN="<paste token>"
-curl -sS -X POST https://polius.life/api/verify-token \
+curl -sS -X POST http://localhost:3000/api/verify-token \
   -H "Content-Type: application/json" \
   -d "{
     \"token\": \"$TOKEN\",
@@ -126,7 +126,7 @@ The token is **not opaque** — it's a stateless `<payload>.<signature>` string:
 - TTL: **10 minutes** from issue.
 - Verification recomputes the HMAC with the server secret — no DB lookup needed. If it matches and `exp` is in the future, the token is valid.
 
-After expiry, mint a fresh one by calling `check-subname` again.
+After expiry, mint a fresh one by calling `register` again.
 
 ---
 
@@ -134,8 +134,8 @@ After expiry, mint a fresh one by calling `check-subname` again.
 
 | Status from any endpoint | Action |
 | ------------------------ | ------ |
-| 400 with `fields`        | Fix the field the user provided, re-call `check-subname` |
-| 401 on verify            | Token expired — call `check-subname` again to get a new link |
+| 400 with `fields`        | Fix the field the user provided, re-call `register` |
+| 401 on verify            | Token expired — call `register` again to get a new link |
 | 403 on verify            | Wrong wallet connected — instruct the user to switch wallets |
 | 409 on check             | Suggest a different `agent_name`; show the current `owner`   |
 | 502 on check             | Retry once; if persistent, surface the `detail` to the user  |
@@ -148,4 +148,4 @@ After expiry, mint a fresh one by calling `check-subname` again.
 
 🔒 Treat the `registrationLink` as **bearer-like** for 10 minutes: anyone who has it can complete registration *if* they also control the wallet address baked into it. The wallet-address check is the second factor.
 
-🔒 Only send `address`, `description`, and `role` through the canonical `polius.life` host. There is no API key in this skill — auth happens via wallet signature on the registration page.
+🔒 This is a **local-dev** skill — it points at `http://localhost:3000`, an unencrypted loopback host. Never use this file against a remote address; for production, use [`/skill.md`](/skill.md) which targets `https://polius.life`. There is no API key — auth happens via wallet signature.
